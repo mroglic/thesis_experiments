@@ -67,7 +67,17 @@ The plugin always tracks on the colour camera and offers no way to give it anoth
 
 `ir_record.py` takes `imuToCamera` from the calibration of a `sai-record-orbbec` recording, because `camera1` there is the same ToF camera. So record a few seconds with `start_vio.bat` first.
 
-First result (2026-10-29, same room, ~40 s of walking, lights on): colour tracked 100 % of the time; ToF IR 512×512 tracked 31 % of the time (lost tracking after 5.7 s and got it back after 27 s).
+Depth is recorded but not used for tracking (`useStereo: false` in `vio_config.yaml`). IR and depth come from the same sensor and share one calibration, and Spectacular AI then treats them as a stereo pair with zero baseline: tracking diverged within 3–6 s and was lost for most of the recording. With depth off, the same recordings track the whole time. To experiment with internal parameters: `replay_ir.bat <folder> --set key=value`.
+
+First results (2026-10-29, home, lights on; separate sessions, not the same path, so only indicative):
+
+| Recording | Tracking | Path | End–start |
+|---|---|---|---|
+| colour, 92 s | 100 % | 7.4 m | 0.12 m |
+| ToF IR 512×512, 39 s | 100 % | 6.5 m | 0.75 m |
+| ToF IR 512×512, 27 s | 100 % | 5.9 m | 0.29 m |
+
+Undistorting the wide ToF image to a 90° or 70° pinhole camera did not help (slightly worse drift), so the original image is used.
 
 ### Troubleshooting
 

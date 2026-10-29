@@ -16,7 +16,8 @@ Recording folder (same layout as sai-record-orbbec):
     calibration.json  both cameras = the ToF camera (IR and depth come from the same sensor, so they are
                       aligned by construction); intrinsics from the device, imuToCamera from a
                       sai-record-orbbec calibration (camera 1 there is the same ToF camera)
-    vio_config.yaml
+    vio_config.yaml   useStereo: false, so depth is not treated as a second camera: IR and depth have the same
+                      calibration, and as a "stereo pair" with zero baseline tracking breaks within seconds
 
 IMU samples come straight from the accelerometer and gyroscope sensors (1 kHz), the same raw values the plugin
 records, so the plugin's imuToCamera applies unchanged.
@@ -158,7 +159,7 @@ def main():
     with open(os.path.join(out, "calibration.json"), "w") as f:
         json.dump({"cameras": [tof] if args.no_depth else [tof, tof]}, f, indent=2)
     with open(os.path.join(out, "vio_config.yaml"), "w") as f:
-        f.write(f"useSlam: True\ncomputeStereoPointCloud: true\nparameterSets: [{args.params}]\n")
+        f.write(f"useSlam: True\nuseStereo: false\nparameterSets: [{args.params}]\n")
 
     ir_video = ffmpeg_writer(os.path.join(out, "data.mkv"), width, height, args.fps, "gray",
                              ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "12", "-pix_fmt", "yuv420p"])

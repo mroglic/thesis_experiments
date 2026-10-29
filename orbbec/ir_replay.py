@@ -27,6 +27,8 @@ def parse_args():
     p.add_argument("--no_vis", action="store_true", help="no 3D window, summary only")
     p.add_argument("--no_slam", action="store_true", help="VIO only (no loop closures, no point cloud)")
     p.add_argument("--params", help="override parameter sets, e.g. wrapper-base,icp")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="internal SDK parameter, repeatable, e.g. --set useStereo=false (ignore depth)")
     return p.parse_args()
 
 
@@ -39,6 +41,9 @@ def main():
         configuration["useSlam"] = "false"
     if args.params:
         configuration["parameterSets"] = "[" + args.params + "]"
+    for item in args.set:
+        key, value = item.split("=", 1)
+        configuration[key] = value
 
     visualizer = None
     if not args.no_vis:
@@ -96,9 +101,15 @@ def main():
     replay.close()
     log.close()
 
+    # after a final loss the engine gives no more poses, so measure up to the last recorded frame
+    end = stats["t1"] or 0
+    with open(os.path.join(args.folder, "data.jsonl")) as f:
+        for line in f:
+            if '"frames"' in line:
+                end = max(end, json.loads(line)["time"])
     if stats["lost_since"] is not None:
-        stats["lost"].append((stats["lost_since"], stats["t1"]))
-    duration = (stats["t1"] or 0) - (stats["t0"] or 0)
+        stats["lost"].append((stats["lost_since"], end))
+    duration = end - (stats["t0"] or end)
     lost = sum(b - a for a, b in stats["lost"])
     print(f"\n{duration:.1f} s, tracking {100 * (1 - lost / duration) if duration else 0:.0f} % of the time, "
           f"path {stats['path']:.2f} m")
