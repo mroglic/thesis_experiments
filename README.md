@@ -17,13 +17,11 @@ Use a virtual environment: `spectacularAI[full]` needs depthai 2.x, and the mach
 git clone https://github.com/mroglic/thesis_experiments.git
 cd thesis_experiments
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1      # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-python -m pip install --upgrade pip
-python -m pip install "spectacularAI[full]" opencv-python
-python oak\ir_vio.py               # OAK on a USB 3 port
+.venv\Scripts\python -m pip install "spectacularAI[full]" opencv-python
+.venv\Scripts\python oak\ir_vio.py      # OAK on a USB 3 port
 ```
 
-Next time: `cd thesis_experiments`, `.\.venv\Scripts\Activate.ps1`, `python oak\ir_vio.py`.
+Next time: `cd thesis_experiments`, then `.venv\Scripts\python oak\ir_vio.py`.
 FFmpeg 7.1.1 is needed only for `--record`. If it exits silently or with a DLL error, check Smart App Control (step 4 below).
 
 ## Windows setup (once)
