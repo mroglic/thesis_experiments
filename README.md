@@ -1,80 +1,80 @@
 # thesis_experiments
 
-Eksperimenti za tezu: VIO (Spectacular AI) sa IR slikom, da praćenje radi u mraku uz projektor.
+Thesis experiments: VIO (Spectacular AI) with an IR image, so tracking works in the dark next to a projector.
 
-| Folder | Kamera | Šta radi |
+| Folder | Camera | What it does |
 |---|---|---|
-| `oak/` | OAK-D Pro W | VIO uživo na mono IR kamerama, sa IR flood svetlom i 3D prikazom |
-| `orbbec/` | Orbbec Femto Mega | VIO uživo na color kameri; snimanje ToF IR slike + dubine + IMU i puštanje kroz VIO (Replay) |
+| `oak/` | OAK-D Pro W | Live VIO on the mono IR cameras, with the IR flood light and a 3D view |
+| `orbbec/` | Orbbec Femto Mega | Live VIO on the colour camera; recording ToF IR + depth + IMU and playing it through VIO (Replay) |
 
-Sve je probano na Windows 11, Python 3.12.
+Everything was tried on Windows 11 with Python 3.12.
 
-## Priprema Windows računara (jednom)
+## Windows setup (once)
 
 1. **Python 3.12**: `winget install -e --id Python.Python.3.12`
 2. **FFmpeg 7.1.1**: `winget install -e --id Gyan.FFmpeg --version 7.1.1`.
-   Ne instaliraj 8 ili 9: Spectacular AI čita snimke sa opcijom `-vsync`, koje tamo više nema, pa Replay javlja `Failed to read frame #0`.
-3. **Paketi**: `python -m pip install "spectacularAI[full]" opencv-python numpy pyorbbecsdk2`
-4. **Smart App Control** (Windows Security → App & browser control) mora biti **Off**. Inače Windows bez poruke blokira nepotpisane DLL-ove (OrbbecSDK, Spectacular AI). Greška je `0xC0E90002`, a vidi se u Event Viewer → CodeIntegrity.
-5. Kameru uključi u **USB 3** port.
+   Do not use 8 or 9: Spectacular AI reads recordings with the `-vsync` option, which those versions removed, so Replay reports `Failed to read frame #0`.
+3. **Packages**: `python -m pip install "spectacularAI[full]" opencv-python numpy pyorbbecsdk2`
+4. **Smart App Control** (Windows Security → App & browser control) must be **Off**. Otherwise Windows silently blocks unsigned DLLs (OrbbecSDK, Spectacular AI). The error code is `0xC0E90002`, and the block shows up in Event Viewer → CodeIntegrity.
+5. Plug the camera into a **USB 3** port.
 
-## OAK-D Pro W: IR VIO uživo (lab)
+## OAK-D Pro W: live IR VIO (lab)
 
 ```
 cd oak
-python ir_vio.py                 # flood 0.6, tačke ugašene, 3D prikaz + prozor sa IR slikom
-python ir_vio.py --flood 0       # isto bez IR svetla, za poređenje
+python ir_vio.py                 # flood 0.6, dots off, 3D view + IR image window
+python ir_vio.py --flood 0       # same without IR light, for comparison
 python ir_vio.py --record out\dark --no_slam
 ```
 
-- U IR prozoru: `+` / `-` menja jačinu flood svetla, `d` pali i gasi projektor tačaka, `q` gasi program.
-- U 3D prozoru: miš okreće pogled, točkić zumira, `c` menja pogled, `q` gasi.
-- Poze se upisuju u `poses.jsonl` (vreme, pozicija, status, flood).
+- In the IR window: `+` / `-` change the flood brightness, `d` toggles the dot projector, `q` quits.
+- In the 3D window: the mouse turns the view, the wheel zooms, `c` changes the view, `q` quits.
+- Poses are written to `poses.jsonl` (time, position, status, flood).
 
-VIO ovde prati tačke na dve mono kamere koje vide IR. Zato je flood svetlo dovoljno za rad u mraku i ništa ne treba menjati u SDK-u.
+Here VIO tracks on the two mono cameras, which see IR. That is why the flood light is enough to work in the dark, with no changes to the SDK.
 
 ## Orbbec Femto Mega
 
-Spectacular AI Orbbec dodatak se ne instalira preko pip-a. Skini `spectacularAI_orbbecPlugin_cpp_non-commercial_1.53.2.tar.gz` sa
-[SpectacularAI/sdk releases (v1.53.2)](https://github.com/SpectacularAI/sdk/releases/tag/v1.53.2) i raspakuj ga.
-Fajlove iz `orbbec/` stavi pored foldera `Windows\` iz paketa:
+The Spectacular AI Orbbec plugin is not on pip. Download `spectacularAI_orbbecPlugin_cpp_non-commercial_1.53.2.tar.gz` from
+[SpectacularAI/sdk releases (v1.53.2)](https://github.com/SpectacularAI/sdk/releases/tag/v1.53.2) and unpack it.
+Put the files from `orbbec/` next to the package's `Windows\` folder:
 
 ```
 sai\
-├─ Windows\bin\sai-record-orbbec.exe, vio_jsonl.exe, *.dll   (iz paketa, zatvoren kod)
+├─ Windows\bin\sai-record-orbbec.exe, vio_jsonl.exe, *.dll   (from the package, closed source)
 ├─ start_vio.bat  test_vio.bat  record_ir.bat  replay_ir.bat
 ├─ ir_record.py  ir_replay.py
 └─ recordings\
 ```
 
-**Vremenske oznake (jednom, sa povezanom kamerom).** Pokreni u PowerShell-u kao administrator
-[`obsensor_metadata_win10.ps1`](https://github.com/orbbec/OrbbecSDK/blob/v1.10.18/misc/scripts/obsensor_metadata_win10.ps1) `-op install_all`, pa izvuci i vrati kabl.
-Bez ovoga VIO odbacuje frejmove (`Duplicate or unordered frame timestamps`).
+**Frame timestamps (once, with the camera connected).** In PowerShell as administrator, run
+[`obsensor_metadata_win10.ps1`](https://github.com/orbbec/OrbbecSDK/blob/v1.10.18/misc/scripts/obsensor_metadata_win10.ps1) `-op install_all`, then unplug and replug the camera.
+Without this, VIO discards frames (`Duplicate or unordered frame timestamps`).
 
-### VIO uživo (color)
+### Live VIO (colour)
 
-- `test_vio.bat`: poze kao JSON u konzoli.
-- `start_vio.bat`: 3D prikaz + snimak u `recordings\<vreme>\`. Ako hoćeš samo prikaz, dodaj `--no_record`.
+- `test_vio.bat`: poses as JSON in the console.
+- `start_vio.bat`: 3D view + recording to `recordings\<time>\`. Add `--no_record` for the view only.
 
-### Samo IR (snimak → Replay)
+### IR only (record → Replay)
 
-Dodatak uvek prati tačke na color kameri i ne nudi način da mu se pošalje druga slika. Zato `ir_record.py` snima ToF IR sliku, dubinu i IMU u istom formatu kao `sai-record-orbbec`, a `ir_replay.py` pušta snimak kroz VIO kao da je uživo.
+The plugin always tracks on the colour camera and offers no way to give it another image. So `ir_record.py` records the ToF IR image, depth and IMU in the same format as `sai-record-orbbec`, and `ir_replay.py` plays the recording through VIO as if live.
 
-1. `record_ir.bat`: pojavi se IR prozor. Prošetaj sa kamerom i vrati se na početno mesto, pa pritisni `q`.
-   Opcije: `--resolution 640x576` (uži ugao, bez crnog kruga), `--ir_max 800` (svetlija slika), `--no_depth`.
-2. `replay_ir.bat`: pušta najnoviji `recordings\ir_*` sa 3D prikazom. Na kraju ispisuje procenat vremena u praćenju, periode gubitka praćenja, dužinu putanje i rastojanje kraj–početak (drift).
-   Snimak u boji se pušta za poređenje ovako: `replay_ir.bat recordings\<vreme>`.
+1. `record_ir.bat`: an IR window opens. Walk around with the camera, come back to where you started, and press `q`.
+   Options: `--resolution 640x576` (narrower view, no black circle), `--ir_max 800` (brighter image), `--no_depth`.
+2. `replay_ir.bat`: plays the newest `recordings\ir_*` with the 3D view. At the end it prints the share of time spent tracking, the lost-tracking periods, the path length and the end–start distance (drift).
+   To play a colour recording for comparison: `replay_ir.bat recordings\<time>`.
 
-`ir_record.py` koristi `imuToCamera` iz kalibracije nekog `sai-record-orbbec` snimka, jer je `camera1` tamo ista ToF kamera. Zato prvo jednom snimi par sekundi sa `start_vio.bat`.
+`ir_record.py` takes `imuToCamera` from the calibration of a `sai-record-orbbec` recording, because `camera1` there is the same ToF camera. So record a few seconds with `start_vio.bat` first.
 
-Prvi rezultat (29. 10. 2026, ista soba, ~40 s hoda, sa svetlom): color radi 100 % vremena, a ToF IR 512×512 31 % vremena (izgubi praćenje posle 5,7 s i vrati ga posle 27 s).
+First result (2026-10-29, same room, ~40 s of walking, lights on): colour tracked 100 % of the time; ToF IR 512×512 tracked 31 % of the time (lost tracking after 5.7 s and got it back after 27 s).
 
-### Problemi
+### Troubleshooting
 
-- **Replay se zamrzne**: praćenje je izgubljeno. `ir_replay.py` tada nastavlja da crta poslednju dobru pozu, a periode gubitka ispisuje u konzoli.
-- **`IMU buffer max size exceeded` stalno, bez poza**: kamera ne šalje frejmove. Ili kameru koristi drugi program, ili je ostala u lošem stanju posle nasilnog gašenja. Izvuci i vrati kabl.
-- **`sai-record-orbbec` pukne posle 2–3 s**: `ffmpeg` nije u PATH-u.
+- **Replay freezes**: tracking is lost. `ir_replay.py` keeps drawing the last good pose and prints the lost periods in the console.
+- **`IMU buffer max size exceeded` over and over, no poses**: the camera is not sending frames. Either another program is using it, or it was left in a bad state after being force-closed. Unplug and replug it.
+- **`sai-record-orbbec` crashes after 2–3 s**: `ffmpeg` is not on PATH.
 
-## Šta je otvoreno, a šta zatvoreno
+## What is open and what is closed
 
-Ove skripte i `sai-record-orbbec` / `vio_jsonl` imaju otvoren kod. VIO/SLAM engine (`spectacularAI_orbbecPlugin.dll`, `spectacularAI_native*.pyd`, `libspectacularAI_depthaiPlugin.so`) je zatvoren i besplatan samo za nekomercijalnu upotrebu. Slanje sopstvenih frejmova uživo (Input API) traži komercijalnu licencu, pa je jedini besplatan ulaz Replay.
+These scripts and `sai-record-orbbec` / `vio_jsonl` are open source. The VIO/SLAM engine (`spectacularAI_orbbecPlugin.dll`, `spectacularAI_native*.pyd`, `libspectacularAI_depthaiPlugin.so`) is closed and free for non-commercial use only. Feeding your own frames live (the Input API) needs a commercial license, so Replay is the only free way in.
