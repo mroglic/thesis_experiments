@@ -9,7 +9,7 @@ Thesis experiments: VIO (Spectacular AI) with an IR image, so tracking works in 
 
 Everything was tried on Windows 11 with Python 3.12.
 
-## Quick start (OAK in the lab, Windows)
+## Quick start
 
 Use a virtual environment: `spectacularAI[full]` needs depthai 2.x, and the machine may already have depthai 3 installed for something else. Any Python 3.8–3.13 works.
 
