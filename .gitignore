@@ -2,3 +2,4 @@ __pycache__/
 recordings/
 poses.jsonl
 *.mkv
+.venv/
