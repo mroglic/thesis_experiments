@@ -9,6 +9,23 @@ Thesis experiments: VIO (Spectacular AI) with an IR image, so tracking works in 
 
 Everything was tried on Windows 11 with Python 3.12.
 
+## Quick start (OAK in the lab, Windows)
+
+Use a virtual environment: `spectacularAI[full]` needs depthai 2.x, and the machine may already have depthai 3 installed for something else. Any Python 3.8–3.13 works.
+
+```powershell
+git clone https://github.com/mroglic/thesis_experiments.git
+cd thesis_experiments
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1      # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+python -m pip install --upgrade pip
+python -m pip install "spectacularAI[full]" opencv-python
+python oak\ir_vio.py               # OAK on a USB 3 port
+```
+
+Next time: `cd thesis_experiments`, `.\.venv\Scripts\Activate.ps1`, `python oak\ir_vio.py`.
+FFmpeg 7.1.1 is needed only for `--record`. If it exits silently or with a DLL error, check Smart App Control (step 4 below).
+
 ## Windows setup (once)
 
 1. **Python 3.12**: `winget install -e --id Python.Python.3.12`
