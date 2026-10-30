@@ -53,6 +53,8 @@ def parse_args():
     p.add_argument("--resolution", default="400p", choices=["400p", "800p"], help="mono camera resolution for VIO")
     p.add_argument("--low_latency", action="store_true",
                    help="pose on every IMU sample instead of every frame (as in ARML); poses.jsonl gets hundreds of lines/s")
+    p.add_argument("--no_feature_tracker", action="store_true",
+                   help="track features on the PC instead of on the OAK (to check whether lost tracking comes from the device)")
     p.add_argument("--no_slam", action="store_true", help="VIO only, no SLAM (no loop closures, no point cloud)")
     p.add_argument("--no_gray", action="store_true", help="do not show the IR image window")
     p.add_argument("--ir_pos", default="20,40",
@@ -132,6 +134,7 @@ def main():
     config = spectacularAI.depthai.Configuration()
     config.inputResolution = args.resolution
     config.useSlam = not args.no_slam
+    config.useFeatureTracker = not args.no_feature_tracker
     if args.mask:
         config.internalParameters = {"trackerMasks": args.mask}
         print("tracker mask on:", args.mask)
