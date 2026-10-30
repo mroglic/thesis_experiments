@@ -8,6 +8,7 @@ Thesis experiments: VIO (Spectacular AI) with an IR image, so tracking works in 
 | `orbbec/` | Orbbec Femto Mega | Live VIO on the colour camera; recording ToF IR + depth + IMU and playing it through VIO (Replay) |
 
 Everything was tried on Windows 11 with Python 3.12.
+Commands to copy (version check, looking at a recording): [NOTES.md](NOTES.md).
 
 ## Quick start
 
