@@ -9,9 +9,15 @@ projector is off by default, because its dots move with the camera and confuse t
     python ir_vio.py                    # flood 0.6, dots off, 3D view + IR image
     python ir_vio.py --flood 0          # same without IR light, for comparison
     python ir_vio.py --record out/dark  # also record the session (for sai-cli process / diagnose)
+    python ir_vio.py --follow           # 3D view follows the camera (the visualizer's default)
 
-In the IR image window:  + / -  flood brighter / darker,  d  dot projector on/off,  q  quit.
-In the 3D window: the visualizer's own keys (q quits, mouse moves the view).
+A 20 cm wireframe cube is placed 1 m in front of the camera when tracking starts. It is drawn in the 3D view
+and, projected with the VIO pose, in the IR image: if VIO works, the cube stays put on the table while you
+move. --no_cube turns it off, --cube_size and --cube_distance change it.
+
+In the IR image window:  + / -  flood brighter / darker,  d  dot projector on/off,
+                         b  move the cube 1 m in front of the camera,  q  quit.
+In the 3D window: the visualizer's own keys (q quits, mouse moves the view; the view stays put unless --follow).
 Every VIO pose goes to poses.jsonl (time, position, status, flood) for comparing runs.
 """
 import argparse
@@ -24,13 +30,59 @@ import time
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__.strip(), formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--flood", type=float, default=0.6, help="IR flood light intensity 0..1 (default 0.6)")
+    p.add_argument("--max_flood", type=float, default=0.8,
+                   help="upper limit for the flood (default 0.8: above it the LED driver switches the light off)")
     p.add_argument("--dots", type=float, default=0.0, help="IR dot projector intensity 0..1 (default 0 = off)")
     p.add_argument("--resolution", default="400p", choices=["400p", "800p"], help="mono camera resolution for VIO")
     p.add_argument("--no_slam", action="store_true", help="VIO only, no SLAM (no loop closures, no point cloud)")
     p.add_argument("--no_gray", action="store_true", help="do not show the IR image window")
     p.add_argument("--record", help="also record the session to this folder")
     p.add_argument("--log", default="poses.jsonl", help="pose log file (default poses.jsonl, empty = none)")
+    p.add_argument("--follow", action="store_true", help="3D view follows the camera pose (default: fixed view)")
+    p.add_argument("--no_cube", action="store_true", help="do not show the AR test cube")
+    p.add_argument("--cube_size", type=float, default=0.2, help="cube side in m (default 0.2)")
+    p.add_argument("--cube_distance", type=float, default=1.0, help="cube distance in front of the camera in m (default 1)")
     return p.parse_args()
+
+
+CUBE_EDGES = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
+
+
+def cube_corners(center, size):
+    """8 corners of a cube centred on `center`, aligned with the world axes (z up)."""
+    import numpy as np
+    h = size / 2
+    return np.array([[center[0] + x, center[1] + y, center[2] + z] for x in (-h, h) for y in (-h, h) for z in (-h, h)])
+
+
+def cube_in_front(camera_pose, distance):
+    """World point `distance` m along the camera's optical axis."""
+    m = camera_pose.getCameraToWorldMatrix()
+    return m[0:3, 3] + distance * m[0:3, 2]
+
+
+def draw_cube_3d(corners):
+    from OpenGL.GL import glUseProgram, glLineWidth, glColor3f, glBegin, glEnd, glVertex3f, GL_LINES
+    glUseProgram(0)
+    glLineWidth(3)
+    glColor3f(0.1, 0.4, 1.0)
+    glBegin(GL_LINES)
+    for a, b in CUBE_EDGES:
+        glVertex3f(*corners[a])
+        glVertex3f(*corners[b])
+    glEnd()
+
+
+def draw_cube_image(frame, corners, camera_pose):
+    """Project the cube into the IR image with the VIO pose and the (rectified) camera intrinsics."""
+    import cv2
+    import numpy as np
+    pts = (camera_pose.getWorldToCameraMatrix() @ np.c_[corners, np.ones(8)].T)[0:3]
+    if np.any(pts[2] < 0.05):
+        return   # behind or too close to the camera
+    uv = (np.array(camera_pose.camera.getIntrinsicMatrix()) @ pts)[0:2] / pts[2]
+    for a, b in CUBE_EDGES:
+        cv2.line(frame, (int(uv[0, a]), int(uv[1, a])), (int(uv[0, b]), int(uv[1, b])), 255, 2, cv2.LINE_AA)
 
 
 def main():
@@ -48,6 +100,10 @@ def main():
 
     vis_args = VisualizerArgs()
     vis_args.targetFps = 30
+    vis_args.cameraFollow = args.follow
+    cube = {"corners": None, "pose": None, "move": False}   # shared by the VIO thread and the 3D window
+    if not args.no_cube:
+        vis_args.customRenderCallback = lambda: cube["corners"] is not None and draw_cube_3d(cube["corners"])
     visualizer = Visualizer(vis_args)
     if config.useSlam:
         config.parameterSets.append("point-cloud")
@@ -64,7 +120,7 @@ def main():
     should_quit = threading.Event()
 
     def main_loop():
-        light = {"flood": max(0.0, min(1.0, args.flood)), "dots": max(0.0, min(1.0, args.dots))}
+        light = {"flood": max(0.0, min(args.max_flood, args.flood)), "dots": max(0.0, min(1.0, args.dots))}
         log = open(args.log, "a") if args.log else None
         with depthai.Device(pipeline) as device, vio_pipeline.startSession(device) as vio_session:
             def apply_light():
@@ -79,24 +135,34 @@ def main():
                 if gray is not None and gray.has():
                     import cv2
                     frame = gray.get().getCvFrame()
+                    if cube["corners"] is not None and cube["pose"] is not None and last_status == "TRACKING":
+                        draw_cube_image(frame, cube["corners"], cube["pose"])
                     text = f"flood {light['flood']:.1f}  dots {light['dots']:.1f}  {last_status or ''}"
                     cv2.putText(frame, text, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, 255, 1, cv2.LINE_AA)
                     cv2.imshow("IR (left mono, what VIO sees)", frame)
                     key = cv2.waitKey(1) & 0xFF
                     if key in (ord("+"), ord("=")):
-                        light["flood"] = min(1.0, round(light["flood"] + 0.1, 2)); apply_light()
+                        light["flood"] = min(args.max_flood, round(light["flood"] + 0.1, 2)); apply_light()
                     elif key == ord("-"):
                         light["flood"] = max(0.0, round(light["flood"] - 0.1, 2)); apply_light()
                     elif key == ord("d"):
                         light["dots"] = 0.0 if light["dots"] > 0 else 0.5; apply_light()
+                    elif key == ord("b"):
+                        cube["move"] = True
                     elif key == ord("q"):
                         should_quit.set()
                         visualizer.shouldQuit = True   # also closes the 3D window
                     progress = True
                 if vio_session.hasOutput():
                     out = vio_session.getOutput()
-                    visualizer.onVioOutput(out.getCameraPose(0), status=out.status)
+                    camera_pose = out.getCameraPose(0)
+                    visualizer.onVioOutput(camera_pose, status=out.status)
                     status = str(out.status).split(".")[-1]
+                    if not args.no_cube and status == "TRACKING":
+                        cube["pose"] = camera_pose
+                        if cube["corners"] is None or cube["move"]:
+                            cube["corners"] = cube_corners(cube_in_front(camera_pose, args.cube_distance), args.cube_size)
+                            cube["move"] = False
                     if status != last_status:
                         print("tracking:", status)
                         last_status = status
