@@ -68,7 +68,7 @@ Each run is VIO only (`--no_slam`): with SLAM, coming back to the start closes t
 
 1. Mark a start spot with tape and pick a route of 30–40 s: 5 s still on the mark, slowly around the table or room (4–6 m), one quicker left-right turn, back to the mark, 5 s still. Walk it the same way every time (direction, speed, what the camera looks at).
 2. Run `oak\light.bat`, `oak\dark.bat` or `oak\dark_flood.bat` (or `python oak\ir_vio.py --test dark_flood`). Start on the mark, wait for `TRACKING` in the IR window, walk the route, come back to the mark, wait, press `q`.
-3. Do each test 2–3 times. Every run goes to a new file, `runs\<test>_<n>.jsonl`.
+3. Do each test 2–3 times. Every run goes to a new file, `runs\<test>_<n>.jsonl`. `oak\del_runs.bat` deletes all runs (it asks first).
 4. After each run the .bat prints the comparison of all runs so far (`python oak\compare_runs.py`): duration, tracking %, lost periods, path length, end–start distance (drift), median exposure and ISO, and the mean per test.
 
 The path length should be about the same in all runs (same route); end–start is the drift.
