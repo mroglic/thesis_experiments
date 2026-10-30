@@ -27,7 +27,8 @@ In the IR image window:  + / -  flood brighter / darker,  d  dot projector on/of
                          b  move the cube 1 m in front of the camera,  q  quit.
 In the 3D window: the visualizer's own keys (q quits, mouse moves the view; the view stays put unless --follow).
 The IR window also shows the sensor's auto exposure (exposure time, ISO): in the dark it goes up.
-Every VIO pose goes to poses.jsonl (time, position, status, flood, exposure, ISO) for comparing runs.
+Every VIO pose goes to poses.jsonl (time, position, status, flood, exposure, ISO) for comparing runs; while VIO
+sends no poses (tracking lost), a NO_OUTPUT line every 0.1 s.
 """
 import argparse
 import json
@@ -165,8 +166,20 @@ def main():
             last_status = None
             sensor = {"exposure_ms": None, "iso": None}
             ir_placed = False
+            # When tracking is lost, VIO sends no poses at all. So while none come, log a NO_OUTPUT line every
+            # 0.1 s; otherwise the log (and compare_runs.py) only sees the time spent tracking.
+            last_output = last_gap_line = time.time()
             while not should_quit.is_set():
                 progress = False
+                now = time.time()
+                if now - last_output > 0.3 and now - last_gap_line > 0.1:
+                    if last_status != "NO_OUTPUT":
+                        print("tracking: NO_OUTPUT (no poses from VIO)")
+                        last_status = "NO_OUTPUT"
+                    if log:
+                        log.write(json.dumps({"wall": now, "status": "NO_OUTPUT", "flood": light["flood"],
+                                              "dots": light["dots"], **sensor}) + "\n")
+                    last_gap_line = now
                 if gray is not None and gray.has():
                     import cv2
                     msg = gray.get()
@@ -202,6 +215,7 @@ def main():
                     progress = True
                 if vio_session.hasOutput():
                     out = vio_session.getOutput()
+                    last_output = time.time()
                     camera_pose = out.getCameraPose(0)
                     visualizer.onVioOutput(camera_pose, status=out.status)
                     status = str(out.status).split(".")[-1]
@@ -215,7 +229,7 @@ def main():
                         last_status = status
                     if log:
                         p = out.pose.position
-                        log.write(json.dumps({"time": out.pose.time, "position": [p.x, p.y, p.z], "status": status,
+                        log.write(json.dumps({"wall": last_output, "time": out.pose.time, "position": [p.x, p.y, p.z], "status": status,
                                               "flood": light["flood"], "dots": light["dots"], **sensor}) + "\n")
                     progress = True
                 if not progress:

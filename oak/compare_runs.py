@@ -4,6 +4,7 @@ Compares ir_vio.py runs from their pose logs (one .jsonl per run).
     python compare_runs.py                    # all runs in runs\ (light_1, dark_1, dark_flood_1, ...)
     python compare_runs.py runs\light_1.jsonl runs\dark_flood_1.jsonl
 
+Time runs from the first TRACKING pose to the end; NO_OUTPUT lines (no poses from VIO) count as lost.
 For each run: duration, share of time spent tracking, number of lost periods, path length (tracking only),
 end–start distance (drift, if the route starts and ends at the same spot) and the median exposure / ISO.
 With several runs of a test (light_1, light_2, ...) it also prints the mean per test.
@@ -20,15 +21,20 @@ import sys
 def stats(path):
     with open(path) as f:
         rows = [json.loads(line) for line in f if line.strip()]
-    if not rows:
+    for r in rows:   # wall clock (also on NO_OUTPUT lines); old logs only have the pose time
+        r["t"] = r.get("wall", r.get("time"))
+    # the run starts at the first TRACKING pose (before that VIO is still initialising on the mark)
+    start = next((i for i, r in enumerate(rows) if r["status"] == "TRACKING"), None)
+    if start is None:
         return None
-    duration = rows[-1]["time"] - rows[0]["time"]
+    rows = rows[start:]
+    duration = rows[-1]["t"] - rows[0]["t"]
     tracking_time, lost, path_len = 0.0, 0, 0.0
     first = last = None
     for prev, row in zip(rows, rows[1:]):
         ok = prev["status"] == "TRACKING" and row["status"] == "TRACKING"
         if ok:
-            tracking_time += row["time"] - prev["time"]
+            tracking_time += row["t"] - prev["t"]
             path_len += math.dist(prev["position"], row["position"])
         if prev["status"] == "TRACKING" and row["status"] != "TRACKING":
             lost += 1
