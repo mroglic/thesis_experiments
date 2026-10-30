@@ -42,7 +42,7 @@ python ir_vio.py --flood 0       # same without IR light, for comparison
 python ir_vio.py --record out\dark --no_slam
 ```
 
-- In the IR window: `+` / `-` change the flood brightness (up to 0.8, `--max_flood`), `d` toggles the dot projector, `b` moves the cube, `q` quits.
+- In the IR window: `+` / `-` change the flood brightness (up to 0.8, `--max_flood`), `d` toggles the dot projector, `r` resets the cube in front of the camera, `q` quits.
   It opens at the top left of the main monitor; `--ir_pos x,y` places it elsewhere (e.g. `1940,40` for a monitor to the right).
 - In the 3D window: the view stays put (`--follow` makes it follow the camera); the mouse turns the view, the wheel zooms, `c` changes the view, `q` quits.
 - AR test: a 20 cm wireframe cube is placed 1 m in front of the camera when tracking starts, and drawn both in the 3D view and in the IR image. If VIO works, it stays in place while the camera moves. `--no_cube`, `--cube_size`, `--cube_distance`.

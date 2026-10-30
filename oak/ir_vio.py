@@ -24,7 +24,7 @@ and, projected with the VIO pose, in the IR image: if VIO works, the cube stays 
 move. --no_cube turns it off, --cube_size and --cube_distance change it.
 
 In the IR image window:  + / -  flood brighter / darker,  d  dot projector on/off,
-                         b  move the cube 1 m in front of the camera,  q  quit.
+                         r  reset the cube 1 m in front of the camera,  q  quit.
 In the 3D window: the visualizer's own keys (q quits, mouse moves the view; the view stays put unless --follow).
 The IR window also shows the sensor's auto exposure (exposure time, ISO): in the dark it goes up.
 Every VIO pose goes to poses.jsonl (time, position, status, flood, exposure, ISO) for comparing runs; while VIO
@@ -207,7 +207,7 @@ def main():
                         light["flood"] = max(0.0, round(light["flood"] - 0.1, 2)); apply_light()
                     elif key == ord("d"):
                         light["dots"] = 0.0 if light["dots"] > 0 else 0.5; apply_light()
-                    elif key == ord("b"):
+                    elif key in (ord("r"), ord("b")):
                         cube["move"] = True
                     elif key == ord("q"):
                         should_quit.set()
