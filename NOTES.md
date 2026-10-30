@@ -7,8 +7,8 @@ Run from the `thesis_experiments` folder (cmd).
 `spectacularAI` needs depthai 2.x. If one of these prints depthai `3.…`, that environment will not work with Spectacular AI.
 
 ```
-.venv\Scripts\python -c "import sys, depthai, spectacularAI; print(sys.version, depthai.__version__, spectacularAI.__version__)"
-python -c "import sys, depthai, spectacularAI; print(sys.version, depthai.__version__, spectacularAI.__version__)"
+.venv\Scripts\python -c "import sys, depthai, importlib.metadata as m; print(sys.version, depthai.__version__, m.version('spectacularAI'))"
+python -c "import sys, depthai, importlib.metadata as m; print(sys.version, depthai.__version__, m.version('spectacularAI'))"
 ```
 
 The first line is the venv, the second the system Python. `oak\*.bat` use the venv if it exists.
