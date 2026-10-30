@@ -51,7 +51,7 @@ python ir_vio.py --record out\dark --no_slam
 - `--low_latency`: a pose on every IMU sample instead of every frame, as in ARML. Matters for the projector; here the cube then runs slightly ahead of the (older) image.
 - Poses are written to `poses.jsonl` (time, position, status, flood, dots, exposure, ISO).
 
-`oak\sai_preview.bat` runs Spectacular AI's own preview (`sai-cli record oak --preview3d`, no SLAM, no RGB) without our script, to check whether lost tracking comes from the camera / cable / SDK. It always records, to `recordings\sai\<time>`; `--no_feature_tracker` moves feature tracking from the OAK to the PC.
+`oak\sai_preview.bat` runs Spectacular AI's own preview (`sai-cli record oak --preview3d --gray_preview`, with SLAM like `ir_vio.py`, no RGB) without our script, to check whether lost tracking comes from the camera / cable / SDK. It always records, to `recordings\sai\<time>`; `--no_feature_tracker` moves feature tracking from the OAK to the PC.
 
 Here VIO tracks on the two mono cameras, which see IR. That is why the flood light is enough to work in the dark, with no changes to the SDK.
 ARML does the same (stereo mono cameras, OAK feature tracker), but without SLAM, with `lowLatency`, and it never turns the IR light on.
