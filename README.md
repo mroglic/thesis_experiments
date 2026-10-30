@@ -47,9 +47,31 @@ python ir_vio.py --record out\dark --no_slam
 - In the 3D window: the view stays put (`--follow` makes it follow the camera); the mouse turns the view, the wheel zooms, `c` changes the view, `q` quits.
 - AR test: a 20 cm wireframe cube is placed 1 m in front of the camera when tracking starts, and drawn both in the 3D view and in the IR image. If VIO works, it stays in place while the camera moves. `--no_cube`, `--cube_size`, `--cube_distance`.
 - Above flood 0.8 the light switched itself off (the image kept running), most likely the LED driver's protection on USB power; hence the limit.
-- Poses are written to `poses.jsonl` (time, position, status, flood).
+- The IR window also shows the sensor's auto exposure (exposure time, ISO). In the dark it rises: long exposure means motion blur, high ISO means noise.
+- `--low_latency`: a pose on every IMU sample instead of every frame, as in ARML. Matters for the projector; here the cube then runs slightly ahead of the (older) image.
+- Poses are written to `poses.jsonl` (time, position, status, flood, dots, exposure, ISO).
 
 Here VIO tracks on the two mono cameras, which see IR. That is why the flood light is enough to work in the dark, with no changes to the SDK.
+ARML does the same (stereo mono cameras, OAK feature tracker), but without SLAM, with `lowLatency`, and it never turns the IR light on.
+
+### Light test: light, dark, dark_flood
+
+The same route under three lights, to show what the flood light changes:
+
+| Test | Room | Flood |
+|---|---|---|
+| `light` | lights on | off |
+| `dark` | dark (lights off, curtains drawn, monitors off or turned away) | off |
+| `dark_flood` | dark | 0.6 |
+
+Each run is VIO only (`--no_slam`): with SLAM, coming back to the start closes the loop and hides the drift.
+
+1. Mark a start spot with tape and pick a route of 30–40 s: 5 s still on the mark, slowly around the table or room (4–6 m), one quicker left-right turn, back to the mark, 5 s still. Walk it the same way every time (direction, speed, what the camera looks at).
+2. Run `oak\light.bat`, `oak\dark.bat` or `oak\dark_flood.bat` (or `python oak\ir_vio.py --test dark_flood`). Start on the mark, wait for `TRACKING` in the IR window, walk the route, come back to the mark, wait, press `q`.
+3. Do each test 2–3 times. Every run goes to a new file, `runs\<test>_<n>.jsonl`.
+4. After each run the .bat prints the comparison of all runs so far (`python oak\compare_runs.py`): duration, tracking %, lost periods, path length, end–start distance (drift), median exposure and ISO, and the mean per test.
+
+The path length should be about the same in all runs (same route); end–start is the drift.
 
 ## Orbbec Femto Mega
 
