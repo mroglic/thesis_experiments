@@ -36,6 +36,8 @@ def parse_args():
     p.add_argument("--resolution", default="400p", choices=["400p", "800p"], help="mono camera resolution for VIO")
     p.add_argument("--no_slam", action="store_true", help="VIO only, no SLAM (no loop closures, no point cloud)")
     p.add_argument("--no_gray", action="store_true", help="do not show the IR image window")
+    p.add_argument("--ir_pos", default="20,40",
+                   help="IR window top-left x,y in screen pixels (default 20,40 = main monitor; e.g. 1940,40 = monitor to the right)")
     p.add_argument("--record", help="also record the session to this folder")
     p.add_argument("--log", default="poses.jsonl", help="pose log file (default poses.jsonl, empty = none)")
     p.add_argument("--follow", action="store_true", help="3D view follows the camera pose (default: fixed view)")
@@ -45,6 +47,7 @@ def parse_args():
     return p.parse_args()
 
 
+IR_WINDOW = "IR (left mono, what VIO sees)"
 CUBE_EDGES = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
 
 
@@ -130,6 +133,7 @@ def main():
             apply_light()
             gray = None if args.no_gray else device.getOutputQueue(name="gray-left", maxSize=4, blocking=False)
             last_status = None
+            ir_placed = False
             while not should_quit.is_set():
                 progress = False
                 if gray is not None and gray.has():
@@ -139,7 +143,10 @@ def main():
                         draw_cube_image(frame, cube["corners"], cube["pose"])
                     text = f"flood {light['flood']:.1f}  dots {light['dots']:.1f}  {last_status or ''}"
                     cv2.putText(frame, text, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, 255, 1, cv2.LINE_AA)
-                    cv2.imshow("IR (left mono, what VIO sees)", frame)
+                    cv2.imshow(IR_WINDOW, frame)
+                    if not ir_placed:
+                        cv2.moveWindow(IR_WINDOW, *[int(v) for v in args.ir_pos.split(",")])
+                        ir_placed = True
                     key = cv2.waitKey(1) & 0xFF
                     if key in (ord("+"), ord("=")):
                         light["flood"] = min(args.max_flood, round(light["flood"] + 0.1, 2)); apply_light()
