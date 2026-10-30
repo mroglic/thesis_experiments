@@ -162,6 +162,7 @@ def main():
                 device.setIrLaserDotProjectorIntensity(light["dots"])
                 print(f"IR flood {light['flood']:.2f} · dots {light['dots']:.2f}")
             apply_light()
+            print("USB:", str(device.getUsbSpeed()).split(".")[-1], "(SUPER or better is USB 3; HIGH = USB 2, too slow)")
             gray = None if args.no_gray else device.getOutputQueue(name="gray-left", maxSize=4, blocking=False)
             last_status = None
             sensor = {"exposure_ms": None, "iso": None}
@@ -215,6 +216,8 @@ def main():
                     progress = True
                 if vio_session.hasOutput():
                     out = vio_session.getOutput()
+                    if last_status == "NO_OUTPUT":
+                        print(f"VIO poses resumed after {time.time() - last_output:.1f} s")
                     last_output = time.time()
                     camera_pose = out.getCameraPose(0)
                     visualizer.onVioOutput(camera_pose, status=out.status)
