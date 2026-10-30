@@ -12,6 +12,7 @@ projector is off by default, because its dots move with the camera and confuse t
     python ir_vio.py --follow           # 3D view follows the camera (the visualizer's default)
     python ir_vio.py --low_latency      # pose on every IMU sample, like ARML (the cube then runs ahead of the image)
     python ir_vio.py --test dark_flood  # one run of the light test (light / dark / dark_flood), see TESTS below
+    python ir_vio.py --mask             # VIO ignores the projector area (ARML's trackerMasks), see MASK below
 
 TESTS: the same route under three lights, VIO only (no SLAM, so loop closures do not hide drift):
     light       room lights on, flood off
@@ -19,12 +20,18 @@ TESTS: the same route under three lights, VIO only (no SLAM, so loop closures do
     dark_flood  room dark, flood 0.6
 Each run is logged to runs/<test>_<n>.jsonl (next free n); compare them with compare_runs.py.
 
+MASK: ARML (Vio.cs) passes Spectacular AI the internal parameter trackerMasks = 0.314,0.347,0.700,0.748, a
+rectangle in normalised image coordinates where the tracker looks for no features, because the projector
+lights it. It is read only when the session starts, so it is off unless you start with --mask; then every
+log line has "mask" and a test run is logged as runs/<test>_mask_<n>.jsonl. The m key only shows or hides
+the rectangle in the IR image (assuming x0,y0,x1,y1; not verified), it does not switch the mask on.
+
 A 20 cm wireframe cube is placed 1 m in front of the camera when tracking starts. It is drawn in the 3D view
 and, projected with the VIO pose, in the IR image: if VIO works, the cube stays put on the table while you
 move. --no_cube turns it off, --cube_size and --cube_distance change it.
 
 In the IR image window:  + / -  flood brighter / darker,  d  dot projector on/off,
-                         r  reset the cube 1 m in front of the camera,  q  quit.
+                         r  reset the cube 1 m in front of the camera,  m  show/hide the mask area,  q  quit.
 In the 3D window: the visualizer's own keys (q quits, mouse moves the view; the view stays put unless --follow).
 The IR window also shows the sensor's auto exposure (exposure time, ISO): in the dark it goes up.
 Every VIO pose goes to poses.jsonl (time, position, status, flood, exposure, ISO) for comparing runs; while VIO
@@ -56,20 +63,24 @@ def parse_args():
     p.add_argument("--no_cube", action="store_true", help="do not show the AR test cube")
     p.add_argument("--cube_size", type=float, default=0.2, help="cube side in m (default 0.2)")
     p.add_argument("--cube_distance", type=float, default=1.0, help="cube distance in front of the camera in m (default 1)")
+    p.add_argument("--mask", nargs="?", const=ARML_MASK, default=None, metavar="X0,Y0,X1,Y1",
+                   help=f"VIO ignores this image area (trackerMasks; default ARML's {ARML_MASK}); off unless given")
     p.add_argument("--test", choices=list(TESTS), help="light test run: sets --flood, --no_slam and --log runs/<test>_<n>.jsonl")
     args = p.parse_args()
     if args.test:
         args.flood = TESTS[args.test]
         args.no_slam = True
+        name = args.test + ("_mask" if args.mask else "")
         n = 1
-        while os.path.exists(os.path.join("runs", f"{args.test}_{n}.jsonl")):
+        while os.path.exists(os.path.join("runs", f"{name}_{n}.jsonl")):
             n += 1
-        args.log = os.path.join("runs", f"{args.test}_{n}.jsonl")
-        print(f"test {args.test}, run {n}: flood {args.flood}, no SLAM, log {args.log}")
+        args.log = os.path.join("runs", f"{name}_{n}.jsonl")
+        print(f"test {args.test}, run {n}: flood {args.flood}, no SLAM, mask {args.mask or 'off'}, log {args.log}")
         print("start on the mark, wait for TRACKING, walk the route, come back to the mark, wait 5 s, press q")
     return args
 
 
+ARML_MASK = "0.314,0.347,0.700,0.748"   # trackerMasks in ARML's Vio.cs (projector area)
 TESTS = {"light": 0.0, "dark": 0.0, "dark_flood": 0.6}   # test name -> flood intensity
 IR_WINDOW = "IR (left mono, what VIO sees)"
 CUBE_EDGES = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
@@ -121,6 +132,9 @@ def main():
     config = spectacularAI.depthai.Configuration()
     config.inputResolution = args.resolution
     config.useSlam = not args.no_slam
+    if args.mask:
+        config.internalParameters = {"trackerMasks": args.mask}
+        print("tracker mask on:", args.mask)
     if args.low_latency:
         try:
             config.lowLatency = True
@@ -166,6 +180,7 @@ def main():
             gray = None if args.no_gray else device.getOutputQueue(name="gray-left", maxSize=4, blocking=False)
             last_status = None
             sensor = {"exposure_ms": None, "iso": None}
+            show_mask = False
             ir_placed = False
             # When tracking is lost, VIO sends no poses at all. So while none come, log a NO_OUTPUT line every
             # 0.1 s; otherwise the log (and compare_runs.py) only sees the time spent tracking.
@@ -179,7 +194,7 @@ def main():
                         last_status = "NO_OUTPUT"
                     if log:
                         log.write(json.dumps({"wall": now, "status": "NO_OUTPUT", "flood": light["flood"],
-                                              "dots": light["dots"], **sensor}) + "\n")
+                                              "dots": light["dots"], "mask": args.mask, **sensor}) + "\n")
                     last_gap_line = now
                 if gray is not None and gray.has():
                     import cv2
@@ -197,6 +212,12 @@ def main():
                     if sensor["exposure_ms"]:
                         text = f"exposure {sensor['exposure_ms']:.1f} ms  ISO {sensor['iso']}"
                         cv2.putText(frame, text, (8, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.6, 255, 1, cv2.LINE_AA)
+                    if show_mask or args.mask:
+                        x0, y0, x1, y1 = [float(v) for v in (args.mask or ARML_MASK).split(",")]
+                        h, w = frame.shape[:2]
+                        cv2.rectangle(frame, (int(x0 * w), int(y0 * h)), (int(x1 * w), int(y1 * h)), 255, 1)
+                        label = "mask ACTIVE" if args.mask else "mask area (not active, start with --mask)"
+                        cv2.putText(frame, label, (int(x0 * w) + 4, int(y0 * h) + 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1, cv2.LINE_AA)
                     cv2.imshow(IR_WINDOW, frame)
                     if not ir_placed:
                         cv2.moveWindow(IR_WINDOW, *[int(v) for v in args.ir_pos.split(",")])
@@ -208,6 +229,8 @@ def main():
                         light["flood"] = max(0.0, round(light["flood"] - 0.1, 2)); apply_light()
                     elif key == ord("d"):
                         light["dots"] = 0.0 if light["dots"] > 0 else 0.5; apply_light()
+                    elif key == ord("m"):
+                        show_mask = not show_mask
                     elif key in (ord("r"), ord("b")):
                         cube["move"] = True
                     elif key == ord("q"):
@@ -233,7 +256,7 @@ def main():
                     if log:
                         p = out.pose.position
                         log.write(json.dumps({"wall": last_output, "time": out.pose.time, "position": [p.x, p.y, p.z], "status": status,
-                                              "flood": light["flood"], "dots": light["dots"], **sensor}) + "\n")
+                                              "flood": light["flood"], "dots": light["dots"], "mask": args.mask, **sensor}) + "\n")
                     progress = True
                 if not progress:
                     time.sleep(0.005)

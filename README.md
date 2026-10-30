@@ -42,7 +42,7 @@ python ir_vio.py --flood 0       # same without IR light, for comparison
 python ir_vio.py --record out\dark --no_slam
 ```
 
-- In the IR window: `+` / `-` change the flood brightness (up to 0.8, `--max_flood`), `d` toggles the dot projector, `r` resets the cube in front of the camera, `q` quits.
+- In the IR window: `+` / `-` change the flood brightness (up to 0.8, `--max_flood`), `d` toggles the dot projector, `r` resets the cube in front of the camera, `m` shows the mask area, `q` quits.
   It opens at the top left of the main monitor; `--ir_pos x,y` places it elsewhere (e.g. `1940,40` for a monitor to the right).
 - In the 3D window: the view stays put (`--follow` makes it follow the camera); the mouse turns the view, the wheel zooms, `c` changes the view, `q` quits.
 - AR test: a 20 cm wireframe cube is placed 1 m in front of the camera when tracking starts, and drawn both in the 3D view and in the IR image. If VIO works, it stays in place while the camera moves. `--no_cube`, `--cube_size`, `--cube_distance`.
@@ -72,6 +72,12 @@ Each run is VIO only (`--no_slam`): with SLAM, coming back to the start closes t
 4. After each run the .bat prints the comparison of all runs so far (`python oak\compare_runs.py`): duration, tracking %, lost periods, path length, end–start distance (drift), median exposure and ISO, and the mean per test.
 
 The path length should be about the same in all runs (same route); end–start is the drift.
+
+### Tracker mask (projector area)
+
+ARML gives Spectacular AI the internal parameter `trackerMasks = 0.314,0.347,0.700,0.748` (`Vio.cs`): a rectangle in normalised image coordinates of the mono cameras where the tracker looks for no features, because the projector lights it.
+`--mask` does the same (`--mask x0,y0,x1,y1` for another area). The parameter is read only when the session starts, so the mask is **off** unless you start with `--mask`, also in the tests (`oak\dark_flood.bat --mask`). Masked runs are logged as `runs\<test>_mask_<n>.jsonl`, every line has `"mask"`, and `compare_runs.py` shows them as a separate test.
+The `m` key only shows or hides the rectangle in the IR image; it does not switch the mask on. The drawing assumes the order x0,y0,x1,y1, which is not documented.
 
 ## Orbbec Femto Mega
 

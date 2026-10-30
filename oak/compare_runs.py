@@ -7,7 +7,8 @@ Compares ir_vio.py runs from their pose logs (one .jsonl per run).
 Time runs from the first TRACKING pose to the end; NO_OUTPUT lines (no poses from VIO) count as lost.
 For each run: duration, share of time spent tracking, number of lost periods, path length (tracking only),
 end–start distance (drift, if the route starts and ends at the same spot) and the median exposure / ISO.
-With several runs of a test (light_1, light_2, ...) it also prints the mean per test.
+With several runs of a test (light_1, light_2, ...) it also prints the mean per test; runs with the tracker
+mask (dark_flood_mask_1, ...) are a separate test.
 """
 import glob
 import json
@@ -53,6 +54,7 @@ def stats(path):
         "exposure ms": statistics.median(exposure) if exposure else None,
         "ISO": statistics.median(iso) if iso else None,
         "flood": rows[-1].get("flood", 0),
+        "mask": "on" if rows[-1].get("mask") else "off",
     }
 
 
@@ -73,12 +75,13 @@ def mean_per_test(table):
         for c in FORMATS:
             values = [r[c] for r in runs if r[c] is not None]
             row[c] = statistics.mean(values) if values else None
+        row["mask"] = runs[0]["mask"]
         means.append(row)
     return means
 
 
 def print_table(rows):
-    cells = [{c: (r[c] if c == "run" else "-" if r[c] is None else FORMATS[c].format(r[c])) for c in r} for r in rows]
+    cells = [{c: (r[c] if c in ("run", "mask") else "-" if r[c] is None else FORMATS[c].format(r[c])) for c in r} for r in rows]
     cols = list(cells[0])
     width = {c: max(len(c), *(len(r[c]) for r in cells)) for c in cols}
     print("  ".join(c.ljust(width[c]) for c in cols))
