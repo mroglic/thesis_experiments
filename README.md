@@ -51,8 +51,9 @@ python ir_vio.py --record out\dark --no_slam
 - The IR window also shows the sensor's auto exposure (exposure time, ISO). In the dark it rises: long exposure means motion blur, high ISO means noise.
 - `--low_latency`: a pose on every IMU sample instead of every frame, as in ARML. Matters for the projector; here the cube then runs slightly ahead of the (older) image.
 - Poses are written to `poses.jsonl` (time, position, status, flood, dots, exposure, ISO).
+- `--record <folder>` records Spectacular AI's input (`data.jsonl`, `calibration.json`) **and the rectified left/right mono video** VIO sees (`rectified_left/right.mp4`, plus `rectified_<eye>_frames.csv` with the device time of every frame), so ORB-SLAM3 can later run on exactly the same input (see below). `--no_video` records without the video. Needs ffmpeg 7.x on PATH for the .mp4 (without it the `.h264` files stay, the converter reads those too).
 
-`oak\sai_preview.bat` runs Spectacular AI's own preview (`sai-cli record oak --preview3d --gray_preview`, with SLAM like `ir_vio.py`, no RGB) without our script, to check whether lost tracking comes from the camera / cable / SDK. It always records, to `recordings\sai\<time>`; `--no_feature_tracker` moves feature tracking from the OAK to the PC.
+`oak\sai_preview.bat` runs Spectacular AI's own preview (`sai-cli record oak --preview3d --gray_preview --gray`, with SLAM like `ir_vio.py`, no RGB) without our script, to check whether lost tracking comes from the camera / cable / SDK. When tracking is lost, the trail and the point cloud in the 3D window are cleared and the camera stops. It always records, with the rectified stereo video, to `recordings\sai\<time>`; `--no_feature_tracker` moves feature tracking from the OAK to the PC.
 
 Here VIO tracks on the two mono cameras, which see IR. That is why the flood light is enough to work in the dark, with no changes to the SDK.
 ARML does the same (stereo mono cameras, OAK feature tracker), but without SLAM, with `lowLatency`, and it never turns the IR light on.
@@ -71,7 +72,7 @@ Each run is VIO only (`--no_slam`): with SLAM, coming back to the start closes t
 
 1. Mark a start spot with tape and pick a route of 30–40 s: 5 s still on the mark, slowly around the table or room (4–6 m), one quicker left-right turn, back to the mark, 5 s still. Walk it the same way every time (direction, speed, what the camera looks at).
 2. Run `oak\light.bat`, `oak\dark.bat` or `oak\dark_flood.bat` (or `python oak\ir_vio.py --test dark_flood`). Start on the mark, wait for `TRACKING` in the IR window, walk the route, come back to the mark, wait, press `q`.
-3. Do each test 2–3 times. Every run goes to a new file, `runs\<test>_<n>.jsonl`. `oak\del_runs.bat` deletes all runs (it asks first).
+3. Do each test 2–3 times. Every run goes to a new file, `runs\<test>_<n>.jsonl`, and is recorded (with the stereo video) to `recordings\<test>_<n>\` for ORB-SLAM3 (`--no_record` to skip). `oak\del_runs.bat` deletes all runs (it asks first; recordings stay).
 4. After each run the .bat prints the comparison of all runs so far (`python oak\compare_runs.py`): duration, tracking %, lost periods, path length, end–start distance (drift), median exposure and ISO, and the mean per test.
 
 The path length should be about the same in all runs (same route); end–start is the drift.
@@ -81,6 +82,23 @@ The path length should be about the same in all runs (same route); end–start i
 ARML gives Spectacular AI the internal parameter `trackerMasks = 0.314,0.347,0.700,0.748` (`Vio.cs`): a rectangle in normalised image coordinates of the mono cameras where the tracker looks for no features, because the projector lights it.
 `--mask` does the same (`--mask x0,y0,x1,y1` for another area). The parameter is read only when the session starts, so the mask is **off** unless you start with `--mask`, also in the tests (`oak\dark_flood.bat --mask`). Masked runs are logged as `runs\<test>_mask_<n>.jsonl`, every line has `"mask"`, and `compare_runs.py` shows them as a separate test.
 The `m` key only shows or hides the rectangle in the IR image; it does not switch the mask on. The drawing assumes the order x0,y0,x1,y1, which is not documented.
+
+### ORB-SLAM3 on the same recording (Mac)
+
+Every test run is recorded (`recordings\<test>_<n>\`), so ORB-SLAM3 can be run at home on exactly the input Spectacular AI got: the same rectified stereo IR video and IMU. Copy the folder to the Mac, then:
+
+```
+oak/run_orbslam3.sh recordings/dark_flood_1                   # convert + ORB-SLAM3 Stereo-Inertial + summary
+oak/run_orbslam3.sh recordings/dark_flood_mask_1 --mask --force   # projector rectangle blacked out (as --mask)
+oak/run_orbslam3.sh recordings/dark_1 --ini_fast 10 --min_fast 4 --force   # more ORB corners in dark images
+python oak/orb_eval.py recordings/*/euroc                     # table of all converted runs
+```
+
+- `sai_to_euroc.py` writes `<recording>/euroc/`: EuRoC images (`mav0/cam0`, `cam1`), `imu0/data.csv` (accelerometer interpolated to the gyro times), `times.txt`, `orbslam3.yaml` (from `calibration.json`: intrinsics, stereo transform, `IMU.T_b_c1` = inverse of `imuToCamera`) and `convert.json` (frame counts, gaps, clock offset). Needs numpy and opencv-python.
+- Image times come from `rectified_<eye>_frames.csv` (device clock); the offset to `data.jsonl`'s clock is measured and removed. A `sai-cli --gray` recording has no CSV: the video frames are then taken as `data.jsonl`'s frames in order.
+- `run_orbslam3.sh` uses `~/dev/slam/ORB_SLAM3` (`$ORB_SLAM3`), `Examples/Stereo-Inertial/stereo_inertial_euroc`, no viewer. Output in `euroc/`: `f_orb.txt` (trajectory of the biggest map), `kf_orb.txt`, `orbslam3.log`.
+- `orb_eval.py`: share of frames in the biggest map, number of maps (each loss without relocalisation starts a new one), lost messages, path length, end–start distance, comparable with `compare_runs.py`.
+- Caveats: the camera type is written as two undistorted pinholes, not `Rectified` (ORB-SLAM3 1.0 crashes with `Rectified` in stereo). IMU noise defaults are the BMI270 datasheet values ×10 (`--noise_gyro`, `--noise_acc`, `--gyro_walk`, `--acc_walk`). Stereo-inertial ORB-SLAM3 needs ~10–15 s of motion with rotation before the IMU is initialised (`not enough acceleration` until then), so start each route with that. ORB-SLAM3 always closes loops, the SAI tests run without SLAM, so compare drift with that in mind. The video is H.264 (lossy) while SAI tracked live on the raw frames.
 
 ## Orbbec Femto Mega
 

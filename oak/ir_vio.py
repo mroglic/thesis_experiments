@@ -8,7 +8,7 @@ projector is off by default, because its dots move with the camera and confuse t
     pip install spectacularAI[full] opencv-python
     python ir_vio.py                    # flood 0.6, dots off, 3D view + IR image
     python ir_vio.py --flood 0          # same without IR light, for comparison
-    python ir_vio.py --record out/dark  # also record the session (for sai-cli process / diagnose)
+    python ir_vio.py --record out/dark  # also record the session + the rectified stereo video (see RECORDING)
     python ir_vio.py --follow           # 3D view follows the camera (the visualizer's default)
     python ir_vio.py --low_latency      # pose on every IMU sample, like ARML (the cube then runs ahead of the image)
     python ir_vio.py --test dark_flood  # one run of the light test (light / dark / dark_flood), see TESTS below
@@ -18,7 +18,9 @@ TESTS: the same route under three lights, VIO only (no SLAM, so loop closures do
     light       room lights on, flood off
     dark        room dark, flood off
     dark_flood  room dark, flood 0.6
-Each run is logged to runs/<test>_<n>.jsonl (next free n); compare them with compare_runs.py.
+Each run is logged to runs/<test>_<n>.jsonl (next free n); compare them with compare_runs.py. Each run is also
+recorded to recordings/<test>_<n>/ (with the stereo video, see RECORDING) for ORB-SLAM3 on the Mac; --no_record
+turns that off.
 
 MASK: ARML (Vio.cs) passes Spectacular AI the internal parameter trackerMasks = 0.314,0.347,0.700,0.748, a
 rectangle in normalised image coordinates where the tracker looks for no features, because the projector
@@ -29,6 +31,14 @@ the rectangle in the IR image (assuming x0,y0,x1,y1; not verified), it does not 
 A 20 cm wireframe cube is placed 1 m in front of the camera when tracking starts. It is drawn in the 3D view
 and, projected with the VIO pose, in the IR image: if VIO works, the cube stays put on the table while you
 move. --no_cube turns it off, --cube_size and --cube_distance change it.
+
+RECORDING: --record writes Spectacular AI's recording (data.jsonl: IMU, frame times; calibration.json) and, like
+`sai-cli record oak --gray`, the rectified left/right mono video VIO sees (rectified_left/right.mp4, H.264, a key
+frame every second), plus rectified_<eye>_frames.csv (sequence number and device time of every video frame). That
+is what sai_to_euroc.py needs to run ORB-SLAM3 on the same input. --no_video records without the video.
+The video is written by its own thread from a deep queue, because a lost H.264 packet spoils the frames up to
+the next key frame; the CSV shows any gap in the sequence numbers. ffmpeg (7.x) turns .h264 into .mp4 at the end;
+without ffmpeg the .h264 files stay (sai_to_euroc.py reads those too).
 
 In the IR image window:  + / -  flood brighter / darker,  d  dot projector on/off,
                          r  reset the cube 1 m in front of the camera,  m  show/hide the mask area,  q  quit.
@@ -59,7 +69,9 @@ def parse_args():
     p.add_argument("--no_gray", action="store_true", help="do not show the IR image window")
     p.add_argument("--ir_pos", default="20,40",
                    help="IR window top-left x,y in screen pixels (default 20,40 = main monitor; e.g. 1940,40 = monitor to the right)")
-    p.add_argument("--record", help="also record the session to this folder")
+    p.add_argument("--record", help="also record the session to this folder (with the rectified stereo video)")
+    p.add_argument("--no_record", action="store_true", help="with --test: do not record the run (pose log only)")
+    p.add_argument("--no_video", action="store_true", help="with --record: no rectified stereo video (data.jsonl only)")
     p.add_argument("--log", default="poses.jsonl", help="pose log file (default poses.jsonl, empty = none)")
     p.add_argument("--follow", action="store_true", help="3D view follows the camera pose (default: fixed view)")
     p.add_argument("--no_cube", action="store_true", help="do not show the AR test cube")
@@ -77,7 +89,9 @@ def parse_args():
         while os.path.exists(os.path.join("runs", f"{name}_{n}.jsonl")):
             n += 1
         args.log = os.path.join("runs", f"{name}_{n}.jsonl")
-        print(f"test {args.test}, run {n}: flood {args.flood}, no SLAM, mask {args.mask or 'off'}, log {args.log}")
+        if not args.record and not args.no_record:
+            args.record = os.path.join("recordings", f"{name}_{n}")
+        print(f"test {args.test}, run {n}: flood {args.flood}, no SLAM, mask {args.mask or 'off'}, log {args.log}, recording {args.record or 'off'}")
         print("start on the mark, wait for TRACKING, walk the route, come back to the mark, wait 5 s, press q")
     return args
 
@@ -125,6 +139,22 @@ def draw_cube_image(frame, corners, camera_pose):
         cv2.line(frame, (int(uv[0, a]), int(uv[1, a])), (int(uv[0, b]), int(uv[1, b])), 255, 2, cv2.LINE_AA)
 
 
+def to_mp4(h264_path):
+    """rectified_<eye>.h264 -> .mp4 with ffmpeg (the same command as sai-cli); keeps the .h264 if that fails."""
+    import shutil
+    import subprocess
+    if not shutil.which("ffmpeg"):
+        print(f"no ffmpeg on PATH: {h264_path} stays .h264 (sai_to_euroc.py reads it too)")
+        return
+    mp4 = h264_path.rpartition(".")[0] + ".mp4"
+    cmd = ["ffmpeg", "-loglevel", "error", "-framerate", "30", "-y", "-i", h264_path, "-avoid_negative_ts", "make_zero", "-c", "copy", mp4]
+    if subprocess.run(cmd).returncode == 0:
+        os.remove(h264_path)
+        print("video:", mp4)
+    else:
+        print(f"ffmpeg failed, {h264_path} kept")
+
+
 def main():
     args = parse_args()
     import depthai
@@ -166,7 +196,55 @@ def main():
         xout.setStreamName("gray-left")
         vio_pipeline.stereo.rectifiedLeft.link(xout.input)
 
+    # with --record: the rectified stereo pair VIO works on, H.264 on the OAK (as `sai-cli record oak --gray`)
+    video_eyes = []
+    if args.record and not args.no_video:
+        for eye, node in (("left", vio_pipeline.stereo.rectifiedLeft), ("right", vio_pipeline.stereo.rectifiedRight)):
+            enc = pipeline.create(depthai.node.VideoEncoder)
+            enc.setDefaultProfilePreset(30, depthai.VideoEncoderProperties.Profile.H264_MAIN)
+            enc.setKeyframeFrequency(30)   # a key frame every second: a lost packet spoils at most 1 s
+            node.link(enc.input)
+            xenc = pipeline.create(depthai.node.XLinkOut)
+            xenc.setStreamName("h264-" + eye)
+            enc.bitstream.link(xenc.input)
+            video_eyes.append(eye)
+
     should_quit = threading.Event()
+
+    def video_writer(device, stop):
+        """Drains the H.264 queues into rectified_<eye>.h264 + rectified_<eye>_frames.csv (own thread, so the
+        IR window or the 3D view never make it drop packets)."""
+        outs = []
+        for eye in video_eyes:
+            q = device.getOutputQueue(name="h264-" + eye, maxSize=300, blocking=False)
+            f = open(os.path.join(args.record, f"rectified_{eye}.h264"), "wb")
+            csv = open(os.path.join(args.record, f"rectified_{eye}_frames.csv"), "w")
+            csv.write("index,sequence,t_device_s,bytes\n")
+            outs.append({"eye": eye, "q": q, "f": f, "csv": csv, "n": 0, "last_seq": None, "gaps": 0})
+        while True:
+            got = False
+            for o in outs:
+                pkt = o["q"].tryGet()
+                if pkt is None:
+                    continue
+                data = pkt.getData()
+                data.tofile(o["f"])
+                seq = pkt.getSequenceNum()
+                if o["last_seq"] is not None and seq != o["last_seq"] + 1:
+                    o["gaps"] += 1
+                o["last_seq"] = seq
+                o["csv"].write(f"{o['n']},{seq},{pkt.getTimestampDevice().total_seconds():.6f},{len(data)}\n")
+                o["n"] += 1
+                got = True
+            if not got:
+                if stop.is_set():
+                    break
+                time.sleep(0.002)
+        for o in outs:
+            o["f"].close()
+            o["csv"].close()
+            print(f"video {o['eye']}: {o['n']} frames, {o['gaps']} gaps in the sequence numbers")
+        return [o["f"].name for o in outs]
 
     def main_loop():
         light = {"flood": max(0.0, min(args.max_flood, args.flood)), "dots": max(0.0, min(1.0, args.dots))}
@@ -181,6 +259,12 @@ def main():
             apply_light()
             print("USB:", str(device.getUsbSpeed()).split(".")[-1], "(SUPER or better is USB 3; HIGH = USB 2, too slow)")
             gray = None if args.no_gray else device.getOutputQueue(name="gray-left", maxSize=4, blocking=False)
+            video_stop, video_files = threading.Event(), []
+            video_thread = None
+            if video_eyes:
+                video_thread = threading.Thread(target=lambda: video_files.extend(video_writer(device, video_stop)))
+                video_thread.start()
+                print("recording to", args.record, "(data.jsonl + rectified stereo video)")
             last_status = None
             sensor = {"exposure_ms": None, "iso": None}
             show_mask = False
@@ -265,8 +349,13 @@ def main():
                     time.sleep(0.005)
             device.setIrFloodLightIntensity(0)
             device.setIrLaserDotProjectorIntensity(0)
+            if video_thread:
+                video_stop.set()
+                video_thread.join()
         if log:
             log.close()
+        for fn in video_files:
+            to_mp4(fn)
         if not args.no_gray:
             import cv2
             cv2.destroyAllWindows()
